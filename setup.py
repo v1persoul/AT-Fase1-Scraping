@@ -13,8 +13,6 @@ setup(
     package_dir={'': 'src'},
     install_requires=[
         "Flask",
-        "requests",
-        "beautifulsoup4"
         "pytest"
     ],
     classifiers=[
