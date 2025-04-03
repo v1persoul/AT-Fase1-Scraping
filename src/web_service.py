@@ -1,70 +1,84 @@
-from playwright.sync_api import sync_playwright  # Bibliotecas necesarias de Playwright
+import asyncio  # Para manejar funciones asíncronas
+from playwright.async_api import async_playwright  # Playwright en modo asíncrono
 import sys  # Para manejar argumentos desde la línea de comandos
 import os  # Para manejar rutas del sistema operativo
-import time  # Para agregar pausas entre desplazamientos
 
-def fetch_url(url, output_file):
+async def fetch_url(url, output_file):
     """
-    Función para realizar scraping de una URL y guardar el contenido en un archivo .txt.
-    Soporta páginas estáticas y dinámicas, incluyendo aquellas que requieren desplazamiento.
+    Función para realizar scraping de una URL y guardar el contenido en múltiples formatos:
+    .txt, .html, .md y una captura de pantalla en .jpg.
 
     Args:
         url (str): La URL de la página que se desea procesar.
-        output_file (str): El nombre del archivo donde se guardará el contenido.
-
-    NOTA: AÚN NO FUNCIONA CON PÁGINAS QUE REQUIEREN INICIO DE SESIÓN O CAPTCHA.
+        output_file (str): El nombre base del archivo donde se guardará el contenido.
     """
-    # Asegurarse de que el archivo tenga la extensión .txt
-    if not output_file.endswith(".txt"):
-        output_file += ".txt"
-        
-    # Obtener la ruta al escritorio del usuario actual
-    desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
-    output_file_path = os.path.join(desktop_path, output_file)
+    # Asegurarse de que el archivo base no tenga extensión
+    base_name = os.path.splitext(output_file)[0]
+    
+    # Construir la ruta de la carpeta "Recovered" fuera de "src"
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # Ruta del proyecto
+    recovered_path = os.path.join(project_root, "Recovered", base_name)
+    
+    # Crear la carpeta si no existe
+    os.makedirs(recovered_path, exist_ok=True)
+    
+    # Rutas de los archivos de salida
+    txt_path = os.path.join(recovered_path, f"{base_name}.txt")
+    html_path = os.path.join(recovered_path, f"{base_name}.html")
+    md_path = os.path.join(recovered_path, f"{base_name}.md")
+    screenshot_path = os.path.join(recovered_path, f"{base_name}.jpg")
 
-    # Iniciar Playwright en modo síncrono
-    with sync_playwright() as p:
+    # Iniciar Playwright en modo asíncrono
+    async with async_playwright() as p:
         # Lanzar un navegador Chromium en modo headless (sin interfaz gráfica)
-        browser = p.chromium.launch(headless=True)  # Cambiar a False para depuración visual
-        
-        # Crear un nuevo contexto de navegador con cookies habilitadas
-        context = browser.new_context()
-        page = context.new_page()
+        browser = await p.chromium.launch(headless=True)  # Cambiar a False para depuración visual
+        context = await browser.new_context()
+        page = await context.new_page()
 
         # Configurar un User-Agent realista
-        page.set_extra_http_headers({
+        await page.set_extra_http_headers({
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
         })
-        
+
         # Navegar a la URL proporcionada
-        page.goto(url)
-        
+        await page.goto(url)
+
         # Esperar a que se cargue completamente la página inicial
-        page.wait_for_load_state("networkidle")
-        
+        await page.wait_for_load_state("networkidle")
+
         # Simular desplazamiento para cargar contenido dinámico
-        scroll_height = page.evaluate("() => document.body.scrollHeight")
+        scroll_height = await page.evaluate("() => document.body.scrollHeight")
         for _ in range(10):  # Ajusta el rango según la cantidad de scrolls necesarios
-            page.evaluate("window.scrollBy(0, document.body.scrollHeight)")
-            time.sleep(2)  # Pausa para permitir que el contenido se cargue
-            new_scroll_height = page.evaluate("() => document.body.scrollHeight")
+            await page.evaluate("window.scrollBy(0, document.body.scrollHeight)")
+            await asyncio.sleep(2)  # Pausa para permitir que el contenido se cargue
+            new_scroll_height = await page.evaluate("() => document.body.scrollHeight")
             if new_scroll_height == scroll_height:  # Detener si no hay más contenido
                 break
             scroll_height = new_scroll_height
-        
+
         # Obtener el contenido completo de la página (HTML renderizado)
-        html_content = page.content()
-        
-        # Guardar el contenido en un archivo .txt en el escritorio 
-        # (Que definimos anteriormente en output_file_path, pero lo podemos cambiar a cualquier directorio)
-        with open(output_file_path, "w", encoding="utf-8") as file:
+        html_content = await page.content()
+
+        # Guardar el contenido en un archivo .txt
+        with open(txt_path, "w", encoding="utf-8") as file:
             file.write(html_content)
-        
+
+        # Guardar el contenido en un archivo .html
+        with open(html_path, "w", encoding="utf-8") as file:
+            file.write(html_content)
+
+        # Guardar el contenido en un archivo .md (como texto plano)
+        with open(md_path, "w", encoding="utf-8") as file:
+            file.write(html_content)
+
+        # Tomar una captura de pantalla y guardarla como .jpg
+        await page.screenshot(path=screenshot_path, full_page=True)
+
         # Cerrar el navegador
-        browser.close()
+        await browser.close()
 
         # Imprimir un mensaje de éxito en terminal para saber que se realizó correctamente
-        print(f"El contenido de la página {url} se ha guardado en {output_file_path}.")
+        print(f"Archivos generados en la carpeta:\n- {txt_path}\n- {html_path}\n- {md_path}\n- {screenshot_path}")
 
 # Verificar si el script se ejecuta desde la línea de comandos
 if __name__ == "__main__":
@@ -77,5 +91,5 @@ if __name__ == "__main__":
     url = sys.argv[1]
     output_file = sys.argv[2]
     
-    # Llamar a la función para procesar la URL
-    fetch_url(url, output_file)
+    # Ejecutar la función asíncrona
+    asyncio.run(fetch_url(url, output_file))
